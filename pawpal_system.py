@@ -12,6 +12,7 @@ scheduling logic will be filled in incrementally, then wired to app.py.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -23,6 +24,9 @@ from typing import Optional
 class Task:
     """Represents a single care activity for a pet."""
 
+    # Maps priority labels -> numeric score so sorting is consistent and typo-safe.
+    PRIORITY_SCORES = {"high": 3, "medium": 2, "low": 1}
+
     title: str
     task_type: str  # e.g. "walk", "feeding", "medication", "grooming"
     duration_minutes: int
@@ -31,6 +35,11 @@ class Task:
     recurring: bool = False
     notes: str = ""
     completed: bool = False
+    # Stable unique id so edit/remove never depend on the (non-unique) title.
+    task_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
+    # Back-reference to the owning pet, stamped by Pet.add_task(). Lets a
+    # combined multi-pet plan show which pet each task belongs to.
+    pet_name: Optional[str] = None
 
     def update_details(self, **changes) -> None:
         """Update one or more task attributes."""
@@ -62,12 +71,12 @@ class Pet:
         """Add a care task to this pet."""
         raise NotImplementedError
 
-    def edit_task(self, title: str, **changes) -> None:
-        """Edit an existing task identified by its title."""
+    def edit_task(self, task_id: str, **changes) -> None:
+        """Edit an existing task identified by its stable task_id."""
         raise NotImplementedError
 
-    def remove_task(self, title: str) -> None:
-        """Remove a task from this pet by its title."""
+    def remove_task(self, task_id: str) -> None:
+        """Remove a task from this pet by its stable task_id."""
         raise NotImplementedError
 
     def get_task_list(self) -> list[Task]:
@@ -106,6 +115,10 @@ class Owner:
         """Return the owner's available time slots for scheduling."""
         raise NotImplementedError
 
+    def get_all_tasks(self) -> list[Task]:
+        """Return every task across all of this owner's pets (for scheduling)."""
+        raise NotImplementedError
+
 
 # ---------------------------------------------------------------------------
 # DailySchedule — the final plan + reasoning
@@ -136,19 +149,24 @@ class DailySchedule:
 # Scheduler — turns owner constraints + pet tasks into a DailySchedule
 # ---------------------------------------------------------------------------
 class Scheduler:
-    """Sorts and organizes tasks into a practical daily plan."""
+    """Sorts and organizes tasks into a practical daily plan.
 
-    def __init__(self, owner: Owner, pet: Pet) -> None:
+    Schedules across ALL of an owner's pets by default (Owner 1 --- * Pet), or a
+    specific subset if ``pets`` is provided. Availability and tasks are gathered
+    lazily at build time (not cached in __init__) so edits made in the UI after
+    the scheduler is created are always reflected.
+    """
+
+    def __init__(self, owner: Owner, pets: Optional[list[Pet]] = None) -> None:
         self.owner = owner
-        self.pet = pet
-        self.available_time = owner.get_available_slots()
-        self.task_list: list[Task] = pet.tasks
+        # Default to every pet the owner has; allow narrowing to a subset.
+        self.pets: list[Pet] = pets if pets is not None else owner.pets
 
-    def sort_tasks(self) -> list[Task]:
-        """Sort tasks (e.g. by priority, then duration)."""
+    def sort_tasks(self, tasks: list[Task]) -> list[Task]:
+        """Sort tasks (e.g. by priority score, then duration)."""
         raise NotImplementedError
 
-    def filter_tasks(self) -> list[Task]:
+    def filter_tasks(self, tasks: list[Task]) -> list[Task]:
         """Drop tasks that don't fit available time/constraints."""
         raise NotImplementedError
 

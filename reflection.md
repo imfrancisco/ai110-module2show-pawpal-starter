@@ -34,6 +34,37 @@
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.
 
+Yes. Reviewing the class skeleton against the scenario surfaced one missing
+relationship and two logic bottlenecks, so I revised the design:
+
+1. **Scheduler now respects the Owner → Pet one-to-many relationship.**
+   My original `Scheduler` took a single `pet`, but an Owner can have multiple
+   pets and the app promises a plan for "their pet(s)." I changed
+   `Scheduler(owner, pet)` to `Scheduler(owner, pets=None)`, which defaults to
+   *all* of the owner's pets (or an optional subset). I also added
+   `Owner.get_all_tasks()` to pool tasks across pets. *Why:* a busy owner with a
+   dog and a cat needs one combined daily plan, not a separate scheduler per pet.
+
+2. **Tasks now carry a stable `task_id` instead of being keyed by title.**
+   `edit_task`/`remove_task` originally looked tasks up by `title`, which breaks
+   as soon as there are two tasks named "Feeding" (morning + evening). I added an
+   auto-generated `task_id` and changed those methods to use it. I also added a
+   `pet_name` back-reference on `Task` (stamped by `Pet.add_task`) so a combined
+   plan can say *"Feed Mochi"* vs *"Feed Biscuit."* *Why:* titles aren't unique,
+   so keying on them causes ambiguous or wrong edits/removes.
+
+3. **Scheduler gathers state lazily instead of snapshotting it in `__init__`.**
+   The old `__init__` cached `available_time` and `task_list` at construction.
+   In a Streamlit app the user keeps editing tasks and preferences, so those
+   snapshots would go stale and force re-creating the scheduler on every change.
+   `sort_tasks`/`filter_tasks` now take the task list as an argument and the plan
+   is built from freshly gathered data. *Why:* the scheduler should always reflect
+   the current state, and this keeps its methods pure and easy to test.
+
+I also added a `PRIORITY_SCORES` map on `Task` so `get_priority_score()` and
+sorting stay consistent and typo-safe rather than relying on scattered string
+comparisons.
+
 ---
 
 ## 2. Scheduling Logic and Tradeoffs
