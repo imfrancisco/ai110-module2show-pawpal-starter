@@ -5,7 +5,29 @@
 **a. Initial design**
 
 - Briefly describe your initial UML design.
+- My initial UML design for PawPal+ centers on a simple object-oriented structure where an Owner manages one or more Pets, each Pet owns a list of care Tasks, and a Scheduler uses those inputs to generate a DailySchedule. The design is modular because it separates the user profile, the pet profile, the task data, and the scheduling logic into distinct classes.
 - What classes did you include, and what responsibilities did you assign to each?
+- Classes:
+  - Owner: stores the owner's name, available time windows, and preferences, and provides the constraints that guide scheduling.
+    - Attributes: owner_name, available_hours, preferred_task_times, task_preferences
+    - Methods: add_pet(), update_preferences(), get_available_slots()
+  - Pet: stores the pet's profile information, such as name, species, and care needs, and keeps track of that pet's routine tasks.
+    - Attributes: pet_name, species, age, care_needs, tasks
+    - Methods: add_task(), edit_task(), remove_task(), get_task_list()
+  - Task: represents a single care activity, such as feeding, walking, medication, or an appointment, with attributes like title, duration, priority, and time preference.
+    - Attributes: title, task_type, duration_minutes, priority, preferred_time, recurring, notes
+    - Methods: update_details(), mark_complete(), get_priority_score()
+  - Scheduler: receives the owner's constraints and the pet's tasks, then sorts and organizes them into a practical daily plan.
+    - Attributes: owner, pet, available_time, task_list
+    - Methods: sort_tasks(), filter_tasks(), build_schedule(), explain_plan()
+  - DailySchedule: holds the final schedule and can explain why certain tasks were placed in certain time slots.
+    - Attributes: scheduled_tasks, date, total_duration, reasoning_notes
+    - Methods: add_task_to_plan(), display_schedule(), summarize_reasoning()
+
+- Actions:
+- Add a pet
+- Add/Edit a Task
+- Schedule an activity
 
 **b. Design changes**
 
