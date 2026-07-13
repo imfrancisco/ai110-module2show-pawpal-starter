@@ -77,29 +77,55 @@ Why this plan?
 
 ## 🧪 Testing PawPal+
 
+Run the full test suite from the project root:
+
 ```bash
-# Run the full test suite:
-pytest
-
-# Run with coverage:
-pytest --cov
+python -m pytest
 ```
 
-Sample test output:
+Add `-v` for a per-test breakdown (`python -m pytest -v`), or target one file
+(`python -m pytest tests/test_scheduler.py`).
+
+### What the tests cover
+
+The suite has **33 tests** across two files, covering both **happy paths**
+(everything fits) and **edge cases** (empty, boundary, and malformed inputs):
+
+- **Data model** — creating tasks, adding them to a pet, and marking them complete.
+- **Sorting correctness** — `sort_by_time()` returns tasks in chronological order; `Scheduler.sort_tasks()` orders high-priority tasks first with time/duration as tie-breakers.
+- **Filtering** — by pet, by completion status, by type, and combined.
+- **Recurrence logic** — completing a daily/weekly task spawns the next occurrence with a correctly advanced due date (including across month/year boundaries); one-off tasks spawn nothing.
+- **Conflict detection** — overlapping preferred times are flagged (duration-aware), including two tasks requested at the exact same time, with friendly same-pet vs. different-pet warnings.
+- **Scheduling brain** — `build_schedule()` packs tasks into real `HH:MM` availability windows without double-booking, pools tasks across multiple pets, spills into later windows, and records reasoning for every placement or skip.
+- **Edge cases** — a pet with no tasks, an owner with no availability, a task too long to fit, an exact-boundary fit, completed/zero-duration tasks, and malformed time strings — none of which crash.
+- **Persistence** — `to_dict()` / `from_dict()` round-trips preserve pets, tasks, and stable IDs.
+
+### Successful test run
 
 ```
-# Paste your pytest output here
-
-<!-- ============================================================== test session starts ==============================================================
-platform win32 -- Python 3.14.5, pytest-9.1.1, pluggy-1.6.0
+============================= test session starts =============================
+platform win32 -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
 rootdir: C:\Users\Francisco\Documents\CodePath Courses\Ai Engineering\Projects\PawPal+\ai110-module2show-pawpal-starter
-plugins: anyio-4.14.2
-collected 2 items                                                                                                                                
+plugins: anyio-4.13.0
+collected 33 items
 
-tests\test_pawpal.py ..                                                                                                                    [100%]
+tests\test_pawpal.py ...................                                 [ 57%]
+tests\test_scheduler.py ..............                                   [100%]
 
-=============================================================== 2 passed in 0.03s =============================================================== -->
+============================= 33 passed in 0.04s ==============================
 ```
+
+### Confidence Level
+
+**★★★★☆ (4 / 5)**
+
+All 33 tests pass and cover every core behavior — sorting, recurrence, conflict
+detection, greedy packing, and the key edge cases (empty pet, duplicate times,
+too-long tasks, no availability). The logic layer is pure and deterministic, so
+these results are trustworthy and repeatable. Held back from 5/5 because coverage
+of the Streamlit UI layer (`app.py`) and time-zone / very-long-horizon recurrence
+is still manual rather than automated. **The scheduling engine itself is
+production-confident; the UI wiring is verified by hand.**
 
 ## 📐 Smarter Scheduling
 

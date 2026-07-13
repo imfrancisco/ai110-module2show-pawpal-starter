@@ -281,3 +281,79 @@ def test_scheduler_mark_task_complete_finds_owning_pet():
     assert spawned.due_date == "2026-07-13"
     assert len(cat.tasks) == 2          # spawned onto the cat, not the dog
     assert len(dog.tasks) == 0
+
+
+# ===========================================================================
+# Assignment rubric — three required behaviors, each with a dedicated test:
+#   1. Sorting correctness   — tasks returned in chronological order
+#   2. Recurrence logic      — completing a daily task creates the next day's task
+#   3. Conflict detection    — the Scheduler flags two tasks at the same time
+# ===========================================================================
+def test_sorting_returns_tasks_in_chronological_order():
+    """1. Sorting correctness: sort_by_time() returns tasks in chronological order.
+
+    Given tasks with preferred times supplied out of order, the result must run
+    earliest-to-latest by clock time (a task with no preferred_time sinks last).
+    """
+    evening = Task("Evening walk", "walk", 30, "low", preferred_time="18:00")
+    dawn = Task("Dawn feed", "feeding", 10, "high", preferred_time="06:30")
+    noon = Task("Midday meds", "medication", 5, "medium", preferred_time="12:00")
+    anytime = Task("Brush", "grooming", 10, "low")  # no time -> floats to the end
+
+    ordered = sort_by_time([evening, anytime, noon, dawn])
+
+    # Chronological order by preferred_time; the untimed task lands last.
+    assert [t.title for t in ordered] == [
+        "Dawn feed", "Midday meds", "Evening walk", "Brush"
+    ]
+    # The timed tasks' minutes are strictly non-decreasing.
+    timed_minutes = [t.preferred_minutes() for t in ordered if t.preferred_minutes() is not None]
+    assert timed_minutes == sorted(timed_minutes)
+
+
+def test_completing_daily_task_creates_next_day_task():
+    """2. Recurrence logic: completing a DAILY task creates one for the next day.
+
+    Marking a daily task complete must (a) finish the original and (b) add a
+    brand-new, uncompleted occurrence due exactly one calendar day later.
+    """
+    pet = Pet("Biscuit", "dog")
+    pet.add_task(Task("Morning feed", "feeding", 10, "high",
+                      frequency="daily", due_date="2026-07-12"))
+    original = pet.tasks[0]
+
+    spawned = pet.mark_task_complete(original.task_id)
+
+    # The original is done; a fresh occurrence was appended for the following day.
+    assert original.completed is True
+    assert spawned is not None
+    assert spawned.completed is False
+    assert spawned.due_date == "2026-07-13"          # today + 1 day
+    assert spawned.task_id != original.task_id       # a genuinely new task
+    assert len(pet.tasks) == 2                        # original + next day's copy
+
+
+def test_scheduler_flags_duplicate_times():
+    """3. Conflict detection: the Scheduler flags two tasks at the same time.
+
+    Two tasks both requesting 08:00 are a duplicate-time clash. The Scheduler
+    must both detect the overlapping pair and surface a human-readable warning.
+    """
+    owner = Owner("Jordan", available_hours=["08:00-12:00"])
+    biscuit = Pet("Biscuit", "dog")
+    biscuit.add_task(Task("Walk", "walk", 30, "high", preferred_time="08:00"))
+    biscuit.add_task(Task("Vitamins", "medication", 5, "high", preferred_time="08:00"))
+    owner.add_pet(biscuit)
+    scheduler = Scheduler(owner)
+
+    # detect_conflicts finds exactly the one clashing pair at the duplicated time.
+    conflicts = scheduler.detect_conflicts(biscuit.tasks)
+    assert len(conflicts) == 1
+    earlier, later, overlap = conflicts[0]
+    assert {earlier.title, later.title} == {"Walk", "Vitamins"}
+    assert overlap == 5                              # the shorter task's 5 minutes
+
+    # And a friendly warning string is raised for the owner.
+    warnings = scheduler.conflict_warnings()
+    assert len(warnings) == 1
+    assert "Conflict" in warnings[0] and "08:00" in warnings[0]
