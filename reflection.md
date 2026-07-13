@@ -276,10 +276,33 @@ but it means "correct" depends partly on agreeing with that policy.
 
 - What part of this project are you most satisfied with?
 
+I am most satisfied with how the project translated a simple UML design into a
+working scheduling system with clear responsibilities. The strongest part was the
+way the `Owner`, `Pet`, `Task`, and `Scheduler` classes fit together so the app
+could generate a real, explainable daily plan instead of just storing data. Seeing
+that structure hold up through the CLI verification and the tests gave me a lot
+of confidence in the design.
+
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
 
+If I had another iteration, I would improve the scheduler policy and make the
+system more robust against messy input. I would add stronger validation for bad
+or incomplete task data, make the conflict-warning logic more configurable, and
+add a clearer way for the owner to choose between different scheduling strategies
+(e.g., prioritize task preferences more strictly vs. prioritize urgent care). I
+would also likely redesign the UI flow so the user can edit pets, tasks, and
+availability more naturally without re-creating the scheduler state.
+
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+
+One important lesson was that good system design is iterative: the first version
+of the structure is useful, but real implementation exposes the relationships and
+logic bottlenecks that need to be refined. I also learned that AI works best as
+an assistant for brainstorming, reviewing structure, and accelerating code
+creation, but its suggestions still need to be checked against the actual
+requirements and verified through real execution. In other words, AI can speed up
+development, but careful reasoning and testing are what make the result reliable.

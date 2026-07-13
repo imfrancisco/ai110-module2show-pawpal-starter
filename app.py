@@ -45,6 +45,67 @@ def save_owner(owner: Owner) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Display helpers — turn Task objects into clean, professional tables and
+# surface the Scheduler's "smart" outputs (sorting, filtering, conflicts) so
+# the user can actually see and use the backend features.
+# ---------------------------------------------------------------------------
+def tasks_to_rows(tasks: list) -> list[dict]:
+    """Turn Task objects into ordered display rows for st.table / st.dataframe."""
+    return [
+        {
+            "Pet": t.pet_name or "—",
+            "Task": t.title,
+            "Type": t.task_type,
+            "Duration": f"{t.duration_minutes} min",
+            "Priority": t.priority.capitalize(),
+            "Preferred": t.preferred_time or "—",
+            "Repeats": "🔁 " + t.frequency if t.frequency != "none" else "—",
+            "Status": "✅ Done" if t.completed else "⏳ Pending",
+        }
+        for t in tasks
+    ]
+
+
+def render_conflict_warnings(scheduler: Scheduler) -> int:
+    """Surface preferred-time clashes as pet-owner-friendly Streamlit callouts.
+
+    Design choice for a pet owner (not a developer):
+      * Same-pet clash  -> st.error: one pet physically cannot do two things at
+        once, so this MUST be fixed. The message says exactly what to do.
+      * Different-pet clash -> st.warning: only a problem if one person must
+        handle both, so it's a caution with a "get help / stagger them" hint.
+    Warnings are shown proactively (as soon as tasks clash), before the owner
+    even generates a plan, so they can fix times up front. Returns the count.
+    """
+    conflicts = scheduler.detect_conflicts(scheduler.owner.get_all_tasks())
+    if not conflicts:
+        return 0
+    st.markdown("#### ⚠️ Time conflicts to review")
+    st.caption(
+        "These tasks *want* to happen at overlapping times. Fix the ones flagged "
+        "in red; the amber ones are fine if someone can help."
+    )
+    for earlier, later, overlap in conflicts:
+        same_pet = bool(earlier.pet_name) and earlier.pet_name == later.pet_name
+        when = f"{earlier.preferred_time} & {later.preferred_time}"
+        if same_pet:
+            st.error(
+                f"🐾 **{earlier.pet_name}** can't do **{earlier.title}** and "
+                f"**{later.title}** at the same time — they overlap by "
+                f"**{overlap} min** (both near {when}). "
+                f"Move one to a different time."
+            )
+        else:
+            st.warning(
+                f"👥 **{earlier.pet_name or 'A pet'}'s {earlier.title}** overlaps "
+                f"**{later.pet_name or 'another pet'}'s {later.title}** by "
+                f"**{overlap} min** (wanted {when}). "
+                f"That's okay only if someone can help — otherwise stagger them."
+            )
+    return len(conflicts)
+
+
+# ---------------------------------------------------------------------------
 # Step 2 — Initialize state.
 # Prefer the persisted owner from disk; if none, create a default one. The
 # result is cached in session_state so we don't re-read the file every rerun.
@@ -98,6 +159,9 @@ elif not isinstance(st.session_state.owner, Owner):
 
 # Always work with the persistent instance from the session "vault".
 owner: Owner = st.session_state.owner
+# One Scheduler wired to the live owner. It gathers tasks/availability lazily at
+# call time, so a single instance stays correct as pets/tasks change this run.
+scheduler = Scheduler(owner)
 
 st.title("🐾 PawPal+")
 st.caption("A smart pet-care planner: add your pets and tasks, then generate a daily plan.")
@@ -254,6 +318,44 @@ if "flash" in st.session_state:
     st.success(st.session_state.pop("flash"))
 
 # ---------------------------------------------------------------------------
+# Section 3b — Smart view: sort & filter the task list using the Scheduler's
+# own methods, then present it as a professional table (st.table). This is the
+# UI face of the backend's sort_by_time() / sort_tasks() / filter_tasks_by().
+# ---------------------------------------------------------------------------
+all_tasks = owner.get_all_tasks()
+if all_tasks:
+    st.markdown("#### 🔎 Sort & filter your tasks")
+    f1, f2, f3 = st.columns(3)
+    with f1:
+        sort_choice = st.selectbox(
+            "Sort by", ["Preferred time", "Priority (high → low)"]
+        )
+    with f2:
+        pet_choice = st.selectbox("Pet", ["All pets"] + [p.pet_name for p in owner.pets])
+    with f3:
+        status_choice = st.selectbox("Status", ["All", "Pending", "Completed"])
+
+    # Filter first (using the Scheduler's filter method), then sort.
+    pet_filter = None if pet_choice == "All pets" else pet_choice
+    status_filter = {"All": None, "Pending": False, "Completed": True}[status_choice]
+    view = scheduler.filter_tasks_by(all_tasks, pet_name=pet_filter, completed=status_filter)
+
+    if sort_choice == "Preferred time":
+        view = scheduler.sort_by_time(view)      # chronological, untimed last
+    else:
+        view = scheduler.sort_tasks(view)        # priority-first ordering
+
+    if view:
+        st.table(tasks_to_rows(view))
+        st.caption(f"Showing {len(view)} of {len(all_tasks)} task(s).")
+    else:
+        st.info("No tasks match those filters.")
+
+    # Proactive conflict warnings — surfaced here, before scheduling, so the
+    # owner can fix clashing times up front.
+    render_conflict_warnings(scheduler)
+
+# ---------------------------------------------------------------------------
 # Section 4 — Build the schedule using the real Scheduler.
 # ---------------------------------------------------------------------------
 st.divider()
@@ -261,21 +363,39 @@ st.subheader("4. Build today's schedule")
 plan_date = st.text_input("Plan label / date", value="Today")
 
 if st.button("📅 Generate schedule", type="primary"):
-    scheduler = Scheduler(owner)  # schedules across ALL of the owner's pets
+    # Reuse the shared scheduler (wired to the live owner) to plan across all pets.
     schedule: DailySchedule = scheduler.build_schedule(date=plan_date)
 
     if not schedule.scheduled_tasks:
         st.warning("Nothing could be scheduled. Add tasks or widen your availability.")
     else:
         st.markdown(f"### 🗓 Daily plan for {plan_date}")
-        # Render each placement as a clean row (ordered by start time).
-        for task in schedule._ordered():
-            slot = schedule.time_slots.get(task.task_id, "--:--")
-            st.markdown(
-                f"- **{slot}** — {task.pet_name}: {task.title} "
-                f"({task.duration_minutes} min) · _{task.priority}_"
+        # Professional table: one row per placement, ordered by start time.
+        plan_rows = [
+            {
+                "Time": schedule.time_slots.get(task.task_id, "--:--"),
+                "Pet": task.pet_name or "—",
+                "Task": task.title,
+                "Duration": f"{task.duration_minutes} min",
+                "Priority": task.priority.capitalize(),
+            }
+            for task in sorted(
+                schedule.scheduled_tasks,
+                key=lambda t: schedule.time_slots.get(t.task_id, ""),
             )
-        st.caption(f"Total scheduled time: {schedule.total_duration} min")
+        ]
+        st.table(plan_rows)
+        # Green success banner summarizes the outcome at a glance.
+        st.success(
+            f"✅ Scheduled {len(schedule.scheduled_tasks)} task(s) — "
+            f"{schedule.total_duration} min of care planned for {plan_date}."
+        )
+        # If the plan had to move tasks off their preferred times, say so.
+        if scheduler.detect_conflicts(owner.get_all_tasks()):
+            st.info(
+                "ℹ️ Some tasks wanted the same time — the plan spaced them out. "
+                "See the conflict notes above to adjust preferred times."
+            )
 
     with st.expander("Why this plan? (reasoning)", expanded=True):
         st.markdown(schedule.summarize_reasoning())

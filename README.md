@@ -22,6 +22,21 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## ✨ Features
+
+The algorithms implemented in [`pawpal_system.py`](pawpal_system.py), each with a
+unit test and a Streamlit UI surface:
+
+- **Priority-first planning** — `Scheduler.sort_tasks()` orders tasks by priority (high → low), using preferred time then duration as tie-breakers.
+- **Greedy time-slot packing** — `Scheduler.build_schedule()` packs tasks into the owner's real `HH:MM` availability windows with first-fit, assigns each a concrete start time, and never double-books a minute.
+- **Sorting by time** — `Scheduler.sort_by_time()` returns tasks in chronological order (untimed tasks float to the end via a `"99:99"` sentinel).
+- **Filtering** — `Scheduler.filter_tasks_by()` filters by pet, completion status, or both; `filter_by_type()` filters by task type.
+- **Conflict warnings** — `Scheduler.conflict_warnings()` / `detect_conflicts()` flag tasks whose preferred-time ranges overlap (duration-aware), distinguishing same-pet clashes (impossible) from different-pet clashes (needs a helper).
+- **Daily / weekly recurrence** — completing a recurring task auto-spawns its next occurrence with `datetime.timedelta` (daily → +1 day, weekly → +7 days); one-off tasks simply complete.
+- **New-day roll-over** — `Scheduler.start_new_day()` / `reset_recurring()` brings recurring chores back to pending for a fresh day.
+- **Reasoning / explainability** — every placement or skip is recorded, viewable via `DailySchedule.summarize_reasoning()`.
+- **Persistence** — `to_dict()` / `from_dict()` round-trip the whole owner → pets → tasks tree to JSON so data survives refreshes and restarts.
+
 ## Getting started
 
 ### Setup
@@ -127,6 +142,21 @@ of the Streamlit UI layer (`app.py`) and time-zone / very-long-horizon recurrenc
 is still manual rather than automated. **The scheduling engine itself is
 production-confident; the UI wiring is verified by hand.**
 
+## 📊 System Design (UML)
+
+The final class design, reconciled against [`pawpal_system.py`](pawpal_system.py).
+Source: [`diagrams/uml_final.mmd`](diagrams/uml_final.mmd).
+
+![PawPal+ final UML class diagram](diagrams/uml_final.png)
+
+**Relationships:** `Owner` *composes* `Pet` (1 → 0..\*), `Pet` *composes* `Task`
+(1 → 0..\*), `Scheduler` uses an `Owner` and its `Pet`s and **produces** a
+`DailySchedule`, which *aggregates* the scheduled `Task`s. Completing a recurring
+`Task` **spawns its next occurrence** (`Task.create_next_occurrence()` via
+`Pet.mark_task_complete()`). The pure module-level helpers (time parsing, sorting,
+filtering, conflict detection) are grouped as `PawPalHelpers` and reused by both
+the `Scheduler` and the Streamlit UI.
+
 ## 📐 Smarter Scheduling
 
 Beyond the core greedy planner, PawPal+ adds four "smart" behaviors. Each is a
@@ -197,14 +227,83 @@ spawned = scheduler.mark_task_complete(task_id)     # daily task due 2026-07-12
 # -> new occurrence due 2026-07-13, uncompleted, with a new task_id
 ```
 
-## 📸 Demo Walkthrough
+## 🎬 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+### Main UI features (what a user can do)
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+Launch the app with `streamlit run app.py`. From the single page a user can:
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->
+- **Set their profile** (sidebar) — enter the owner name and one or more availability windows as `HH:MM-HH:MM` (e.g. `08:00-12:00, 17:00-20:00`).
+- **Add pets** — name, species, and age; each becomes a real `Pet` on the owner.
+- **Add tasks** to a chosen pet — title, type, duration, priority, an optional preferred time, and a repeat setting (`none` / `daily` / `weekly`).
+- **Manage tasks** — tick a task **done** (a recurring one instantly spawns tomorrow's copy) or **remove** it.
+- **Sort & filter** — a control row re-orders the task **table** by *preferred time* or *priority*, and filters by *pet* and *status*.
+- **See conflict warnings** — overlapping preferred times are flagged inline (🔴 same-pet = must fix, 🟠 different-pet = needs a helper).
+- **Generate today's schedule** — produces a timed **table**, a green success summary, and a "Why this plan?" reasoning panel.
+- **Reset everything** — clears the saved data and starts fresh. All changes auto-save to `pawpal_data.json`, so they survive a refresh.
+
+### Example workflow
+
+1. In the sidebar, set availability to `08:00-12:00, 17:00-20:00`.
+2. **Add a pet:** `Biscuit`, dog, age 4.
+3. **Add a task:** `Morning walk`, walk, 30 min, **high** priority, preferred `08:00`, repeats **daily**.
+4. **Add a second task** at the same time: `Vitamins`, medication, 5 min, high, preferred `08:00` → PawPal+ shows a **conflict warning**.
+5. Open **Sort & filter**, choose *Sort by → Preferred time* to see the tasks chronologically in the table.
+6. Click **Generate schedule** → the greedy packer places the walk at `08:00` and spaces the vitamins to `08:30` (no double-booking); the reasoning panel explains each choice.
+7. Tick **Morning walk** done → because it's daily, a fresh occurrence appears **due tomorrow**.
+
+### Key Scheduler behaviors shown
+
+- **Sorting by time** (`sort_by_time`) and **priority-first** ordering (`sort_tasks`).
+- **Filtering** by pet and status (`filter_tasks_by`).
+- **Conflict warnings** for two tasks at the same time (`conflict_warnings`), same-pet vs. different-pet.
+- **Greedy packing** into real clock windows with no double-booking (`build_schedule`).
+- **Daily recurrence** — completing a daily task spawns the next day's occurrence (`mark_task_complete` → `create_next_occurrence`).
+
+### Sample CLI output (`python main.py`)
+
+`main.py` is a headless demo that drives the same logic layer — tasks are added
+out of order, two share the `08:00` slot, and several are recurring:
+
+```text
+==============================================================
+  Tasks as entered (out of order)
+==============================================================
+   18:00  Biscuit  Training       [low   ] · todo
+   08:00  Biscuit  Morning walk   [high  ] · todo 🔁daily due 2026-07-12
+   08:00  Biscuit  Vitamins       [high  ] · todo 🔁daily due 2026-07-12
+   17:30  Mochi    Play time      [low   ] · todo
+   08:15  Mochi    Breakfast      [high  ] · todo 🔁daily due 2026-07-12
+
+==============================================================
+  Feature 1 — Scheduler.sort_by_time() (chronological)
+==============================================================
+   08:00  Biscuit  Morning walk   [high  ] · todo 🔁daily due 2026-07-12
+   08:00  Biscuit  Vitamins       [high  ] · todo 🔁daily due 2026-07-12
+   08:15  Mochi    Breakfast      [high  ] · todo 🔁daily due 2026-07-12
+   17:30  Mochi    Play time      [low   ] · todo
+   18:00  Biscuit  Training       [low   ] · todo
+
+==============================================================
+  Feature 2 — Scheduler.filter_tasks_by()
+==============================================================
+Only Biscuit's tasks:
+   18:00  Biscuit  Training       [low   ] · todo
+   08:00  Biscuit  Morning walk   [high  ] · todo 🔁daily due 2026-07-12
+   08:00  Biscuit  Vitamins       [high  ] · todo 🔁daily due 2026-07-12
+
+==============================================================
+  Feature 3 — Scheduler.conflict_warnings() (same-time detection)
+==============================================================
+  Found 2 conflict(s):
+  ⚠ Conflict: Biscuit's 'Morning walk' and 'Vitamins' overlap by 5 min (wanted 08:00 & 08:00) — same pet — these can't happen at the same time.
+  ⚠ Conflict: Biscuit's 'Morning walk' and Mochi's 'Breakfast' overlap by 10 min (wanted 08:00 & 08:15) — different pets — okay only if someone else can help.
+
+==============================================================
+  Feature 4 — Completing a recurring task spawns the next occurrence
+==============================================================
+Assume today is 2026-07-12.
+
+  Completed 'Morning walk' (daily, due 2026-07-12) -> new occurrence due 2026-07-13.
+  Completed 'Training' (none) — one-off, nothing respawned.
+```

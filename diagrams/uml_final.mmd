@@ -1,0 +1,123 @@
+classDiagram
+    %% PawPal+ — FINAL UML, reconciled against pawpal_system.py.
+    %% Owner 1..* Pet 1..* Task ; Scheduler uses (Owner, Pets) -> produces DailySchedule.
+    %% "_name" = private helper. Module-level pure functions are grouped in PawPalHelpers.
+
+    class Task {
+        +dict PRIORITY_SCORES$
+        +dict RECURRENCE_DAYS$
+        +str title
+        +str task_type
+        +int duration_minutes
+        +str priority
+        +Optional~str~ preferred_time
+        +str frequency
+        +Optional~str~ due_date
+        +bool recurring
+        +str notes
+        +bool completed
+        +str task_id
+        +Optional~str~ pet_name
+        +__post_init__() None
+        +is_recurring() bool
+        +create_next_occurrence(today) Optional~Task~
+        +update_details(changes) None
+        +mark_complete() None
+        +get_priority_score() int
+        +preferred_minutes() Optional~int~
+        +to_dict() dict
+        +from_dict(data)$ Task
+    }
+
+    class Pet {
+        +str pet_name
+        +str species
+        +Optional~int~ age
+        +list~str~ care_needs
+        +list~Task~ tasks
+        +add_task(task) None
+        -_find_task(task_id) Task
+        +edit_task(task_id, changes) None
+        +remove_task(task_id) None
+        +mark_task_complete(task_id, today) Optional~Task~
+        +get_task_list() list~Task~
+        +to_dict() dict
+        +from_dict(data)$ Pet
+    }
+
+    class Owner {
+        +set _DIRECT_FIELDS$
+        +str owner_name
+        +list~str~ available_hours
+        +dict preferred_task_times
+        +dict task_preferences
+        +list~Pet~ pets
+        +add_pet(pet) None
+        +update_preferences(preferences) None
+        +get_available_slots() list~str~
+        +get_all_tasks() list~Task~
+        +to_dict() dict
+        +from_dict(data)$ Owner
+    }
+
+    class DailySchedule {
+        +Optional~str~ date
+        +list~Task~ scheduled_tasks
+        +int total_duration
+        +list~str~ reasoning_notes
+        +dict~str,str~ time_slots
+        +add_task_to_plan(task, time_slot) None
+        +add_reason(note) None
+        -_ordered() list~Task~
+        +display_schedule() str
+        +summarize_reasoning() str
+    }
+
+    class Scheduler {
+        +Owner owner
+        +list~Pet~ pets
+        -_gather_tasks() list~Task~
+        -_windows() list~tuple~
+        +sort_tasks(tasks) list~Task~
+        +filter_tasks(tasks) list~Task~
+        +sort_by_time(tasks) list~Task~
+        +filter_by_pet(tasks, pet_name) list~Task~
+        +filter_by_status(tasks, completed) list~Task~
+        +filter_tasks_by(tasks, pet_name, completed) list~Task~
+        +detect_conflicts(tasks) list~tuple~
+        +conflict_warnings(tasks) list~str~
+        +mark_task_complete(task_id, today) Optional~Task~
+        +start_new_day() int
+        +build_schedule(date) DailySchedule
+        -_place(task, windows, win_index, cursor) Optional~tuple~
+        +explain_plan(date) str
+    }
+
+    class PawPalHelpers {
+        <<module functions>>
+        +parse_hhmm(value) Optional~int~
+        +parse_date(value) Optional~date~
+        +fmt_minutes(total_minutes) str
+        +sort_by_time(tasks) list~Task~
+        +filter_by_pet(tasks, pet_name) list~Task~
+        +filter_by_status(tasks, completed) list~Task~
+        +filter_by_type(tasks, task_type) list~Task~
+        +filter_tasks_by(tasks, pet_name, completed) list~Task~
+        +reset_recurring(tasks) int
+        +detect_conflicts(tasks) list~tuple~
+        +conflict_warnings(tasks) list~str~
+    }
+
+    %% ---- Structural relationships (ownership / composition) ----
+    Owner "1" *-- "0..*" Pet : has
+    Pet "1" *-- "0..*" Task : owns
+    DailySchedule "1" o-- "0..*" Task : schedules
+
+    %% ---- Behavioral relationships (uses / produces / creates) ----
+    Scheduler --> "1" Owner : plans for
+    Scheduler --> "0..*" Pet : schedules
+    Scheduler ..> DailySchedule : produces
+    Scheduler ..> PawPalHelpers : uses
+    Task ..> Task : create_next_occurrence()
+    Pet ..> Task : spawns next occurrence
+    DailySchedule ..> PawPalHelpers : parse_hhmm / fmt_minutes
