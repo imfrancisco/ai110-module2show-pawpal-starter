@@ -8,6 +8,7 @@ to a JSON file on disk and reloaded on startup.
 """
 
 import json
+from datetime import date
 from pathlib import Path
 
 import streamlit as st
@@ -167,18 +168,27 @@ with st.form("add_task_form", clear_on_submit=True):
             "Type", ["walk", "feeding", "medication", "grooming", "enrichment", "other"]
         )
 
-    c3, c4, c5 = st.columns(3)
+    c3, c4, c5, c6 = st.columns(4)
     with c3:
         t_duration = st.number_input("Duration (min)", min_value=1, max_value=240, value=20)
     with c4:
         t_priority = st.selectbox("Priority", ["high", "medium", "low"])
     with c5:
         t_pref = st.text_input("Preferred time", placeholder="HH:MM (optional)")
+    with c6:
+        t_freq = st.selectbox(
+            "Repeats", ["none", "daily", "weekly"],
+            help="A daily/weekly task automatically creates its next occurrence "
+                 "when you mark it complete.",
+        )
 
     if st.form_submit_button("➕ Add task"):
         if not t_title.strip():
             st.warning("Please enter a task title.")
         else:
+            # Recurring tasks start due today, so completing one rolls the next
+            # occurrence to tomorrow (daily) or next week (weekly).
+            due = date.today().isoformat() if t_freq != "none" else None
             selected_pet.add_task(
                 Task(
                     title=t_title.strip(),
@@ -186,6 +196,8 @@ with st.form("add_task_form", clear_on_submit=True):
                     duration_minutes=int(t_duration),
                     priority=t_priority,
                     preferred_time=t_pref.strip() or None,
+                    frequency=t_freq,
+                    due_date=due,
                 )
             )
             save_owner(owner)  # persist immediately so it survives a refresh
@@ -203,23 +215,43 @@ for pet in owner.pets:
         for task in list(pet.tasks):
             cols = st.columns([0.12, 0.58, 0.3])
             with cols[0]:
-                # Marking complete persists because `task` lives on the stored owner.
-                task.completed = st.checkbox(
+                checked = st.checkbox(
                     "done", value=task.completed, key=f"done_{task.task_id}",
                     label_visibility="collapsed",
                 )
             with cols[1]:
                 pref = f" · prefers {task.preferred_time}" if task.preferred_time else ""
+                repeats = f" · 🔁 {task.frequency}" if task.frequency != "none" else ""
+                due = f" · due {task.due_date}" if task.due_date else ""
                 label = f"~~{task.title}~~" if task.completed else f"**{task.title}**"
                 st.markdown(
                     f"{label} · {task.duration_minutes} min · "
-                    f"priority: {task.priority}{pref}"
+                    f"priority: {task.priority}{pref}{repeats}{due}"
                 )
             with cols[2]:
                 if st.button("🗑 Remove", key=f"rm_{task.task_id}"):
                     pet.remove_task(task.task_id)
                     save_owner(owner)  # persist the removal
                     st.rerun()
+
+            # React to the checkbox only on a real change. Completing a recurring
+            # task spawns its next occurrence (daily -> +1 day, weekly -> +7 days).
+            if checked and not task.completed:
+                spawned = pet.mark_task_complete(task.task_id)
+                save_owner(owner)
+                if spawned is not None:
+                    st.session_state["flash"] = (
+                        f"'{spawned.title}' recurs — next one due {spawned.due_date}."
+                    )
+                st.rerun()
+            elif not checked and task.completed:
+                task.completed = False
+                save_owner(owner)
+                st.rerun()
+
+# Show a one-time confirmation after a recurring task rolled over.
+if "flash" in st.session_state:
+    st.success(st.session_state.pop("flash"))
 
 # ---------------------------------------------------------------------------
 # Section 4 — Build the schedule using the real Scheduler.
