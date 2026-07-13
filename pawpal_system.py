@@ -15,7 +15,7 @@ task was placed or skipped.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 
@@ -93,6 +93,15 @@ class Task:
         """Return preferred_time as minutes-since-midnight, or None if unset/loose."""
         return parse_hhmm(self.preferred_time) if self.preferred_time else None
 
+    def to_dict(self) -> dict:
+        """Serialize this task to a plain dict (for saving to disk)."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Task":
+        """Rebuild a Task from a dict produced by to_dict()."""
+        return cls(**data)
+
 
 # ---------------------------------------------------------------------------
 # Pet — profile info + the pet's list of care tasks
@@ -131,6 +140,28 @@ class Pet:
     def get_task_list(self) -> list[Task]:
         """Return the list of tasks for this pet."""
         return self.tasks
+
+    def to_dict(self) -> dict:
+        """Serialize this pet (and its tasks) to a plain dict."""
+        return {
+            "pet_name": self.pet_name,
+            "species": self.species,
+            "age": self.age,
+            "care_needs": self.care_needs,
+            "tasks": [task.to_dict() for task in self.tasks],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Pet":
+        """Rebuild a Pet (and its tasks) from a dict produced by to_dict()."""
+        pet = cls(
+            pet_name=data["pet_name"],
+            species=data["species"],
+            age=data.get("age"),
+            care_needs=list(data.get("care_needs", [])),
+        )
+        pet.tasks = [Task.from_dict(t) for t in data.get("tasks", [])]
+        return pet
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +218,28 @@ class Owner:
         for pet in self.pets:
             all_tasks.extend(pet.tasks)
         return all_tasks
+
+    def to_dict(self) -> dict:
+        """Serialize this owner (and all pets/tasks) to a plain dict."""
+        return {
+            "owner_name": self.owner_name,
+            "available_hours": self.available_hours,
+            "preferred_task_times": self.preferred_task_times,
+            "task_preferences": self.task_preferences,
+            "pets": [pet.to_dict() for pet in self.pets],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Owner":
+        """Rebuild an Owner (and all pets/tasks) from a dict produced by to_dict()."""
+        owner = cls(
+            owner_name=data["owner_name"],
+            available_hours=list(data.get("available_hours", [])),
+            preferred_task_times=dict(data.get("preferred_task_times", {})),
+            task_preferences=dict(data.get("task_preferences", {})),
+        )
+        owner.pets = [Pet.from_dict(p) for p in data.get("pets", [])]
+        return owner
 
 
 # ---------------------------------------------------------------------------

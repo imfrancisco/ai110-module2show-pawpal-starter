@@ -1,0 +1,32 @@
+{
+  "owner_name": "Jordan",
+  "available_hours": [
+    "08:00-12:00",
+    "17:00-20:00"
+  ],
+  "preferred_task_times": {},
+  "task_preferences": {},
+  "pets": [
+    {
+      "pet_name": "Tobby",
+      "species": "dog",
+      "age": 7,
+      "care_needs": [],
+      "tasks": []
+    },
+    {
+      "pet_name": "Luna",
+      "species": "dog",
+      "age": 3,
+      "care_needs": [],
+      "tasks": []
+    },
+    {
+      "pet_name": "Lucy",
+      "species": "cat",
+      "age": 5,
+      "care_needs": [],
+      "tasks": []
+    }
+  ]
+}
