@@ -187,12 +187,61 @@ confidence the logic was sound.
 **a. What you tested**
 
 - What behaviors did you test?
+
+I tested at two levels. First, I wrote two automated `pytest` tests in
+`tests/test_pawpal.py`:
+
+1. **Task completion** (`test_mark_complete_changes_status`): asserts a new task
+   starts with `completed == False`, calls `mark_complete()`, then asserts
+   `completed == True`.
+2. **Task addition** (`test_add_task_increases_pet_task_count`): asserts a new pet
+   starts with zero tasks, calls `add_task()`, then asserts the count is exactly
+   one.
+
+Second, I did manual, CLI-first verification by running `main.py` and
+`pawpal_system.py` directly, plus targeted edge-case checks from the command line:
+a task too long to ever fit, a completed task, a task ending exactly at a window
+boundary, and editing/removing tasks by `task_id`.
+
 - Why were these tests important?
+
+Both automated tests cover behaviors the rest of the system depends on. If
+`mark_complete()` didn't flip the flag, finished tasks would keep reappearing in
+the daily plan, since the scheduler skips completed tasks. If `add_task()` didn't
+actually store the task, the scheduler would have nothing to plan at all — every
+schedule is built from the tasks held on each pet. Both tests deliberately check
+the *before* state as well as the *after*, so a pass genuinely proves the method
+caused the change rather than the value happening to be correct already.
 
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
+
+I am fairly confident in the core behavior. The automated tests pass, and the
+CLI runs show the scheduler correctly pooling two pets' tasks into one plan,
+ordering them by priority, assigning real clock times across multiple availability
+windows, skipping tasks that can't fit (with a recorded reason), and excluding
+completed tasks. My confidence is highest for the sorting, packing, and reasoning
+logic that I exercised directly. It is more moderate for the scheduling *policy*
+itself — the greedy first-fit fills the earliest available slot, so a task's
+`preferred_time` can be ignored when an earlier gap exists (e.g. an evening task
+placed in the morning). That is a known, intentional tradeoff rather than a bug,
+but it means "correct" depends partly on agreeing with that policy.
+
 - What edge cases would you test next if you had more time?
+
+  - **Priority ordering** as an automated test (high placed before low), so the
+    core scheduling promise is guarded, not just checked by eye.
+  - **Overlap / no double-booking:** confirm two placed tasks never share the same
+    minute.
+  - **Empty and degenerate inputs:** no pets, no tasks, or no availability windows
+    should produce an empty plan without crashing.
+  - **Malformed data:** invalid `preferred_time` strings, zero or negative
+    durations, and unknown priority labels.
+  - **Preferred-time honoring:** decide whether tasks should hold their preferred
+    window instead of filling the earliest gap, and test whichever policy I choose.
+  - **Multi-pet edge cases:** duplicate task titles across different pets, and
+    editing/removing the correct task by `task_id`.
 
 ---
 

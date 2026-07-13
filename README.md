@@ -54,6 +54,27 @@ Paste a sample of your app's CLI or Streamlit output here so a reader can see wh
 #   ...
 ```
 
+<!-- ==================================================
+  PawPal+  |  Jordan's pets: Biscuit, Mochi
+==================================================
+Daily plan for Today:
+  08:00 — Biscuit — Morning walk (30 min) [priority: high]
+  08:30 — Biscuit — Breakfast (10 min) [priority: high]
+  08:40 — Mochi — Breakfast (10 min) [priority: high]
+  08:50 — Mochi — Medication (5 min) [priority: medium]
+  08:55 — Mochi — Play time (15 min) [priority: low]
+  09:10 — Biscuit — Training (20 min) [priority: low]
+  Total scheduled time: 90 min
+
+Why this plan?
+- Placed Biscuit's 'Morning walk' at 08:00 (priority: high, 30 min).
+- Placed Biscuit's 'Breakfast' at 08:30 (priority: high, 10 min).
+- Placed Mochi's 'Breakfast' at 08:40 (priority: high, 10 min).
+- Placed Mochi's 'Medication' at 08:50 (priority: medium, 5 min).
+- Placed Mochi's 'Play time' at 08:55 (priority: low, 15 min).
+- Placed Biscuit's 'Training' at 09:10 (priority: low, 20 min).
+- Scheduled 6 of 6 task(s), using 90 min of available time. -->
+
 ## 🧪 Testing PawPal+
 
 ```bash
@@ -68,6 +89,16 @@ Sample test output:
 
 ```
 # Paste your pytest output here
+
+<!-- ============================================================== test session starts ==============================================================
+platform win32 -- Python 3.14.5, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\Francisco\Documents\CodePath Courses\Ai Engineering\Projects\PawPal+\ai110-module2show-pawpal-starter
+plugins: anyio-4.14.2
+collected 2 items                                                                                                                                
+
+tests\test_pawpal.py ..                                                                                                                    [100%]
+
+=============================================================== 2 passed in 0.03s =============================================================== -->
 ```
 
 ## 📐 Smarter Scheduling

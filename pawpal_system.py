@@ -113,6 +113,7 @@ class Pet:
         self.tasks.append(task)
 
     def _find_task(self, task_id: str) -> Task:
+        """Return the task with the given id, or raise KeyError if not found."""
         for task in self.tasks:
             if task.task_id == task_id:
                 return task
