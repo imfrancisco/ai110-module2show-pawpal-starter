@@ -121,6 +121,31 @@ high-priority task out of the schedule, which is exactly the failure the app
 exists to prevent. The scheduler also records its reasoning for every placement,
 so the owner can see *why* a preferred time wasn't honored and adjust if needed.
 
+**A second tradeoff — conflict detection checks the *desired* plan, using
+duration-aware overlap rather than exact-time matches.**
+
+My `detect_conflicts` / `conflict_warnings` logic flags two tasks as clashing
+when their `preferred_time` **ranges overlap** — i.e. one starts before the
+other ends, computed from each task's `preferred_time` + `duration_minutes`. I
+deliberately chose *overlapping durations* over the simpler alternative of
+"only warn when two tasks request the *exact* same start time." Exact-match
+detection is a one-line comparison, but it would miss the most common real
+clash: a 30-minute 08:00 walk and an 08:15 feeding never share a start time yet
+plainly collide. Duration-aware overlap costs a little more (a sort-and-sweep
+over the timed tasks) but catches those cases correctly.
+
+The tradeoff is *where* the check runs: it inspects the owner's **desired**
+times (what they asked for), **not** the final packed schedule. This is
+intentional, because the greedy packer never double-books — it always advances a
+cursor, so the built plan is conflict-free by construction. Warning on the
+desired times is therefore what's useful: it tells the owner "you asked for two
+things at once" so they can fix the *intent*, and it's why the plan may move a
+task off its requested time. The cost is that the warning describes a wish, not
+the final slots; a task flagged as conflicting may still be placed fine (just
+shifted). I judged that acceptable — surfacing the clash the owner created is
+more actionable than silently rearranging it, and the reasoning notes already
+explain any shift.
+
 ---
 
 ## 3. AI Collaboration

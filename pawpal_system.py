@@ -471,6 +471,18 @@ def reset_recurring(tasks: list[Task]) -> int:
     return reset
 
 
+def _overlap_minutes(a: Task, b: Task) -> int:
+    """Minutes two timed tasks overlap (0 if they don't).
+
+    Canonical interval-overlap formula: the overlap starts at the later of the
+    two start times and ends at the earlier of the two end times, clamped to 0.
+    Both tasks must have a usable preferred_time (callers filter first).
+    """
+    start_a, start_b = a.preferred_minutes(), b.preferred_minutes()
+    end_a, end_b = start_a + a.duration_minutes, start_b + b.duration_minutes
+    return max(0, min(end_a, end_b) - max(start_a, start_b))
+
+
 def detect_conflicts(tasks: list[Task]) -> list[tuple[Task, Task, int]]:
     """Find pairs of tasks the owner *wants* happening at the same time.
 
@@ -493,16 +505,46 @@ def detect_conflicts(tasks: list[Task]) -> list[tuple[Task, Task, int]]:
     )
     conflicts: list[tuple[Task, Task, int]] = []
     for i, earlier in enumerate(timed):
-        start_a = earlier.preferred_minutes()
-        end_a = start_a + earlier.duration_minutes
+        end_a = earlier.preferred_minutes() + earlier.duration_minutes
         for later in timed[i + 1:]:
-            start_b = later.preferred_minutes()
-            if start_b >= end_a:
+            if later.preferred_minutes() >= end_a:
                 break  # sorted by start: nothing after this can overlap `earlier`
-            overlap = min(end_a, start_b + later.duration_minutes) - start_b
+            overlap = _overlap_minutes(earlier, later)
             if overlap > 0:
                 conflicts.append((earlier, later, overlap))
     return conflicts
+
+
+def conflict_warnings(tasks: list[Task]) -> list[str]:
+    """Turn overlapping tasks into lightweight, human-readable warning strings.
+
+    This is the "warn, don't crash" layer over detect_conflicts(): it never
+    raises, always returns a (possibly empty) list of plain strings safe to
+    print straight to the terminal or UI, and tells the owner WHY a clash
+    matters by distinguishing:
+
+      * same pet   — physically impossible (one pet can't do two things at once);
+      * different pets — only a problem if a single person must handle both.
+
+    Tasks with missing or malformed preferred times are skipped upstream by
+    detect_conflicts(), so a bad time produces no warning rather than an error.
+    """
+    warnings: list[str] = []
+    for earlier, later, overlap in detect_conflicts(tasks):
+        same_pet = bool(earlier.pet_name) and earlier.pet_name == later.pet_name
+        if same_pet:
+            pair = f"{earlier.pet_name}'s '{earlier.title}' and '{later.title}'"
+            note = "same pet — these can't happen at the same time."
+        else:
+            who_a = f"{earlier.pet_name or 'a pet'}'s '{earlier.title}'"
+            who_b = f"{later.pet_name or 'a pet'}'s '{later.title}'"
+            pair = f"{who_a} and {who_b}"
+            note = "different pets — okay only if someone else can help."
+        warnings.append(
+            f"⚠ Conflict: {pair} overlap by {overlap} min "
+            f"(wanted {earlier.preferred_time} & {later.preferred_time}) — {note}"
+        )
+    return warnings
 
 
 # ---------------------------------------------------------------------------
@@ -609,6 +651,19 @@ class Scheduler:
     def detect_conflicts(self, tasks: list[Task]) -> list[tuple[Task, Task, int]]:
         """Find preferred-time clashes among tasks (see detect_conflicts())."""
         return detect_conflicts(tasks)
+
+    def conflict_warnings(self, tasks: Optional[list[Task]] = None) -> list[str]:
+        """Return friendly conflict-warning messages for overlapping tasks.
+
+        Defaults to checking EVERY task across all of the owner's pets, so the
+        caller can just do ``for w in scheduler.conflict_warnings(): print(w)``.
+        Never raises — a bad or missing time simply yields no warning. See the
+        module-level conflict_warnings() for how same-pet vs. different-pet
+        clashes are worded.
+        """
+        if tasks is None:
+            tasks = self.owner.get_all_tasks()
+        return conflict_warnings(tasks)
 
     def mark_task_complete(self, task_id: str, today: Optional[date] = None) -> Optional[Task]:
         """Complete a task on whichever pet owns it, spawning its next occurrence.

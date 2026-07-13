@@ -103,14 +103,73 @@ tests\test_pawpal.py ..                                                         
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
+Beyond the core greedy planner, PawPal+ adds four "smart" behaviors. Each is a
+small, pure, unit-tested function in [`pawpal_system.py`](pawpal_system.py) with
+a thin `Scheduler` method wrapper, so the UI can use them without re-running the
+whole planner. The table summarizes them; the subsections below explain each and
+**name the method that implements it**.
 
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+| Task sorting | `Scheduler.sort_by_time()` → `sort_by_time()` | Chronological by preferred time; a `"HH:MM"` string key sorts as text, untimed tasks go last |
+| Filtering | `Scheduler.filter_tasks_by()`, `filter_by_pet()`, `filter_by_status()` | Filter by pet name and/or completion status |
+| Conflict handling | `Scheduler.conflict_warnings()` → `detect_conflicts()` | Duration-aware overlap on preferred times; returns warnings, never crashes |
+| Recurring tasks | `Scheduler.mark_task_complete()` → `Task.create_next_occurrence()` | Completing a daily/weekly task spawns the next occurrence via `timedelta` |
+| Sorting/planning (core) | `Scheduler.sort_tasks()`, `build_schedule()` | Priority-first ordering + greedy first-fit packing |
+
+### 1. Sorting behavior — `Scheduler.sort_by_time()`
+
+Orders tasks chronologically by their `preferred_time`. The key trick: a
+zero-padded 24-hour `"HH:MM"` string sorts correctly as plain text
+(`"08:00" < "09:15" < "17:30"`), so the lambda key is just the string itself,
+with a `"99:99"` sentinel to push untimed tasks to the end. `O(n log n)`.
+
+```python
+scheduler.sort_by_time(owner.get_all_tasks())   # earliest preferred time first
+```
+
+### 2. Filtering behavior — `Scheduler.filter_tasks_by()`
+
+Filters a task list by **pet name**, **completion status**, or both in one call
+(each argument is optional; `None` means "don't filter on that field"). Backed by
+the granular helpers `filter_by_pet()` and `filter_by_status()`. Returns a new
+list and never mutates the input.
+
+```python
+scheduler.filter_tasks_by(tasks, pet_name="Biscuit")            # just Biscuit's tasks
+scheduler.filter_tasks_by(tasks, completed=False)               # only pending tasks
+scheduler.filter_tasks_by(tasks, "Biscuit", completed=True)     # Biscuit's done tasks
+```
+
+### 3. Conflict detection — `Scheduler.conflict_warnings()` / `detect_conflicts()`
+
+`detect_conflicts()` finds pairs of tasks whose **preferred-time ranges overlap**
+(duration-aware, not just exact start-time matches) using a sort-and-sweep with
+an early break. `conflict_warnings()` wraps it in a lightweight, "warn-don't-crash"
+layer that returns friendly strings and distinguishes a **same-pet** clash
+(impossible) from a **different-pets** clash (okay only if someone helps). A
+missing or malformed time is skipped, so it never raises.
+
+```python
+for warning in scheduler.conflict_warnings():
+    print(warning)
+# ⚠ Conflict: Biscuit's 'Morning walk' and 'Vitamins' overlap by 5 min
+#   (wanted 08:00 & 08:00) — same pet — these can't happen at the same time.
+```
+
+### 4. Recurring task logic — `Scheduler.mark_task_complete()` / `Task.create_next_occurrence()`
+
+Tasks carry a `frequency` (`"none"`/`"daily"`/`"weekly"`) and a `due_date`.
+Completing a recurring task through `Scheduler.mark_task_complete()` (which
+delegates to `Pet.mark_task_complete()`) automatically spawns a fresh next
+occurrence via `Task.create_next_occurrence()`, advancing the due date with
+`datetime.timedelta` (daily → +1 day, weekly → +7 days). One-off tasks simply
+complete and spawn nothing.
+
+```python
+spawned = scheduler.mark_task_complete(task_id)     # daily task due 2026-07-12
+# -> new occurrence due 2026-07-13, uncompleted, with a new task_id
+```
 
 ## 📸 Demo Walkthrough
 

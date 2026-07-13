@@ -5,12 +5,13 @@ into the Streamlit UI. Run it with:
 
     python main.py
 
-Tasks are added OUT OF TIME ORDER, and several are recurring (daily/weekly), so
-the demo can exercise every "make-it-smart" feature:
+Tasks are added OUT OF TIME ORDER, several are recurring (daily/weekly), and
+TWO tasks are deliberately scheduled at the SAME time so conflict detection has
+something real to warn about. The demo exercises every "make-it-smart" feature:
 
     1. Sorting tasks by time            (Scheduler.sort_by_time)
     2. Filtering by pet / status        (Scheduler.filter_tasks_by)
-    3. Basic conflict detection         (Scheduler.detect_conflicts)
+    3. Conflict WARNINGS                 (Scheduler.conflict_warnings)
     4. Recurring tasks auto-respawn     (Scheduler.mark_task_complete + timedelta)
 """
 
@@ -58,21 +59,18 @@ def main() -> None:
     mochi = Pet(pet_name="Mochi", species="cat", age=2)
 
     iso = TODAY.isoformat()
-    # Added OUT OF ORDER on purpose. Feeding/meds/walks recur DAILY; the bath is
-    # WEEKLY; Training and Play time are one-offs. The two 09:00-ish tasks overlap.
+    # Added OUT OF ORDER on purpose. Note the two 08:00 tasks:
+    #   * Biscuit "Morning walk" 08:00 vs Biscuit "Vitamins" 08:00 -> SAME pet clash
+    #   * Biscuit "Morning walk" 08:00-08:30 vs Mochi "Breakfast" 08:15 -> DIFFERENT pets
     biscuit.add_task(Task("Training", "enrichment", 20, "low", preferred_time="18:00"))
     biscuit.add_task(Task("Morning walk", "walk", 30, "high",
                           preferred_time="08:00", frequency="daily", due_date=iso))
-    biscuit.add_task(Task("Breakfast", "feeding", 10, "high",
-                          preferred_time="08:45", frequency="daily", due_date=iso))
-    biscuit.add_task(Task("Bath", "grooming", 25, "medium",
-                          preferred_time="10:00", frequency="weekly", due_date=iso))
+    biscuit.add_task(Task("Vitamins", "medication", 5, "high",
+                          preferred_time="08:00", frequency="daily", due_date=iso))
 
     mochi.add_task(Task("Play time", "enrichment", 15, "low", preferred_time="17:30"))
-    mochi.add_task(Task("Medication", "medication", 5, "medium",
-                        preferred_time="09:05", frequency="daily", due_date=iso))
     mochi.add_task(Task("Breakfast", "feeding", 10, "high",
-                        preferred_time="09:00", frequency="daily", due_date=iso))
+                        preferred_time="08:15", frequency="daily", due_date=iso))
 
     owner.add_pet(biscuit)
     owner.add_pet(mochi)
@@ -92,37 +90,28 @@ def main() -> None:
     print("Only Biscuit's tasks:")
     show(scheduler.filter_tasks_by(all_tasks, pet_name="Biscuit"))
 
-    # --- Feature 3: conflict detection -------------------------------------
-    banner("Feature 3 — Scheduler.detect_conflicts() (on preferred times)")
-    conflicts = scheduler.detect_conflicts(all_tasks)
-    if not conflicts:
-        print("  No preferred-time conflicts detected.")
-    for earlier, later, overlap in conflicts:
-        print(f"  ⚠ {earlier.pet_name}'s '{earlier.title}' ({earlier.preferred_time}) "
-              f"overlaps '{later.title}' ({later.preferred_time}) by {overlap} min")
+    # --- Feature 3: conflict WARNINGS (the focus of this task) -------------
+    banner("Feature 3 — Scheduler.conflict_warnings() (same-time detection)")
+    warnings = scheduler.conflict_warnings()  # checks every pet's tasks; never crashes
+    if not warnings:
+        print("  No scheduling conflicts detected. ✅")
+    else:
+        print(f"  Found {len(warnings)} conflict(s):")
+        for message in warnings:
+            print(f"  {message}")
 
     # --- Feature 4: recurring tasks auto-respawn on completion -------------
     banner("Feature 4 — Completing a recurring task spawns the next occurrence")
     print(f"Assume today is {TODAY.isoformat()}.\n")
-
-    walk = biscuit.tasks[1]        # daily
-    bath = biscuit.tasks[3]        # weekly
-    training = biscuit.tasks[0]    # one-off
-
-    for task in (walk, bath, training):
-        before = len(biscuit.tasks)
+    walk = biscuit.tasks[1]      # daily
+    training = biscuit.tasks[0]  # one-off
+    for task in (walk, training):
         spawned = scheduler.mark_task_complete(task.task_id, today=TODAY)
-        after = len(biscuit.tasks)
         if spawned is None:
-            print(f"  Completed '{task.title}' ({task.frequency}) — one-off, "
-                  f"nothing respawned. (task count {before} -> {after})")
+            print(f"  Completed '{task.title}' ({task.frequency}) — one-off, nothing respawned.")
         else:
             print(f"  Completed '{task.title}' ({task.frequency}, due {task.due_date}) "
-                  f"-> new occurrence due {spawned.due_date}. "
-                  f"(task count {before} -> {after})")
-
-    banner("Biscuit's tasks after completing today's chores")
-    show(biscuit.tasks)
+                  f"-> new occurrence due {spawned.due_date}.")
 
 
 if __name__ == "__main__":

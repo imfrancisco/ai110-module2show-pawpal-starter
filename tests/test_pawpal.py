@@ -17,6 +17,7 @@ from pawpal_system import (
     Pet,
     Scheduler,
     Task,
+    conflict_warnings,
     detect_conflicts,
     filter_by_pet,
     filter_by_status,
@@ -155,6 +156,45 @@ def test_detect_conflicts_none_when_times_are_clear():
     second = Task("B", "walk", 30, "high", preferred_time="08:30")     # starts exactly at 08:30
 
     assert detect_conflicts([first, second]) == []
+
+
+# ---------------------------------------------------------------------------
+# Lightweight conflict WARNINGS: friendly strings, same-pet vs different-pet,
+# and never crashing on missing / malformed times.
+# ---------------------------------------------------------------------------
+def test_conflict_warnings_flag_same_and_different_pet():
+    """Two 08:00 tasks: one clash within a pet, one across pets, both warned."""
+    owner = Owner("Jordan", available_hours=["08:00-12:00"])
+    biscuit = Pet("Biscuit", "dog")
+    mochi = Pet("Mochi", "cat")
+    biscuit.add_task(Task("Morning walk", "walk", 30, "high", preferred_time="08:00"))
+    biscuit.add_task(Task("Vitamins", "medication", 5, "high", preferred_time="08:00"))
+    mochi.add_task(Task("Breakfast", "feeding", 10, "high", preferred_time="08:15"))
+    owner.add_pet(biscuit)
+    owner.add_pet(mochi)
+    scheduler = Scheduler(owner)
+
+    warnings = scheduler.conflict_warnings()  # defaults to all of the owner's tasks
+
+    # Always a list of printable strings (safe to print without crashing).
+    assert isinstance(warnings, list)
+    assert all(isinstance(w, str) for w in warnings)
+    assert len(warnings) == 2
+
+    joined = " ".join(warnings).lower()
+    assert "same pet" in joined         # Biscuit's walk vs Biscuit's vitamins
+    assert "different pets" in joined   # Biscuit's walk vs Mochi's breakfast
+
+
+def test_conflict_warnings_empty_and_safe_on_bad_times():
+    """No overlaps -> empty list; a malformed/missing time never raises."""
+    pet = Pet("Biscuit", "dog")
+    pet.add_task(Task("Walk", "walk", 30, "high", preferred_time="08:00"))
+    pet.add_task(Task("Bad", "walk", 30, "high", preferred_time="not a time"))
+    pet.add_task(Task("Untimed", "walk", 30, "high"))  # no preferred_time
+
+    # Called directly on a task list; must return [] without throwing.
+    assert conflict_warnings(pet.tasks) == []
 
 
 # ---------------------------------------------------------------------------
